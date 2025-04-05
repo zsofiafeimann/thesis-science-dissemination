@@ -1,0 +1,10 @@
+# Don't upload raw or cleaned data
+data/
+cleaned_data/
+
+# Don't upload Python cache
+__pycache__/
+*.pyc
+
+# Don't upload notebook autosaves
+.ipynb_checkpoints/
