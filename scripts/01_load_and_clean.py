@@ -6,6 +6,7 @@ Created on Sat Apr  5 14:34:03 2025
 """
 
 import pandas as pd
+pip install fuzzywuzzy
 from fuzzywuzzy import process, fuzz
 import os
 
@@ -101,10 +102,10 @@ for name in not_matched_names:
         df_institution_2019['display_name'].unique(),
         scorer=fuzz.token_sort_ratio
     )
-    if score >= 90:
+    if score >= 95:
         fuzzy_matches[name] = (best_match, score)
         
-print(f"Number of high-confidence fuzzy matches (score >= 90): {len(fuzzy_matches)}")
+print(f"Number of high-confidence fuzzy matches (score >= 95): {len(fuzzy_matches)}")
 
 # === 8. Convert fuzzy match results to DataFrame for merging ===
 fuzzy_match_df = pd.DataFrame.from_dict(
@@ -113,7 +114,7 @@ fuzzy_match_df = pd.DataFrame.from_dict(
     columns=['matched_name', 'score']
 ).reset_index().rename(columns={'index': 'ranking_name'})
 
-fuzzy_match_df.head()
+fuzzy_match_df.head(20)
 
 
 
@@ -126,7 +127,7 @@ df_ranking_fuzzy = df_ranking.merge(
     how='inner'
 )
 
-# Merge the above with institution data using the matched institution name
+#  === 9.1. Merge the above with institution data using the matched institution name ===
 df_institution_ranked_fuzzy = df_institution_2019.merge(
     df_ranking_fuzzy,
     left_on='display_name',
@@ -144,17 +145,43 @@ print(f"Total matched records (exact + fuzzy): {len(df_institution_ranked_all)}"
 print(f"Unique institutions matched (combined): {df_institution_ranked_all['display_name'].nunique()}")
 
 
-# === 11. Save the cleaned data files ===
+# === 11. # Check which columns are completely empty (no values at all) ===
+completely_empty_cols = df_institution_ranked_all.columns[
+    df_institution_ranked_all.isna().all()
+].tolist()
+
+print("Columns with no values at all:")
+print(completely_empty_cols)
+
+# Drop the completely empty column
+df_institution_ranked_all.drop(columns=['raw_affiliation_string'], inplace=True)
+
+# Check where ranking_name has a value
+df_institution_ranked_all[df_institution_ranked_all['ranking_name'].notna()][
+    ['ranking_name', 'matched_name', 'display_name', 'score']
+].head(20)
+
+print(df_institution_ranked_all.columns.to_list())
+df_institution_ranked_all.head()
+
+
+# === 12. Drop fuzzy matching helper columns ===
+columns_to_drop = ['ranking_name', 'matched_name', 'score']
+df_institution_ranked = df_institution_ranked_all.drop(columns=columns_to_drop)
+
+
+# === 13. Save the cleaned data files ===
 # Ensure the cleaned_data directory exists
 output_dir = r'C:\Users\Diak\Documents\thesis\thesis-science-dissemination\cleaned_data'
 os.makedirs(output_dir, exist_ok=True)
 
 # Save the cleaned data to the specified location
-df_institution_ranked_all.to_csv(os.path.join(output_dir, "df_institution_ranked_data.csv"), index=False)
-df_author.to_csv(os.path.join(output_dir, "df_author_cleaned.csv"), index=False)
-#df_institution.to_csv(os.path.join(output_dir, "df_institution_cleaned.csv"), index=False)
-df_ranking.to_csv(os.path.join(output_dir, "df_ranking_cleaned.csv"), index=False)
-df_data_2019.to_csv(os.path.join(output_dir, "df_data_2019_cleaned.csv"), index=False)
-df_institution_2019.to_csv(os.path.join(output_dir, "df_institution_2019_cleaned.csv"), index=False)
+df_institution_ranked_all.to_csv(os.path.join(output_dir, "institution_ranked_all_withfuzzy.csv"), index=False)
+df_author.to_csv(os.path.join(output_dir, "author_cleaned.csv"), index=False)
+df_ranking.to_csv(os.path.join(output_dir, "ranking_cleaned.csv"), index=False)
+df_data_2019.to_csv(os.path.join(output_dir, "data_2019_cleaned.csv"), index=False)
+df_institution_2019.to_csv(os.path.join(output_dir, "institution_2019_cleaned.csv"), index=False)
+df_institution_ranked.to_csv(os.path.join(output_dir, "institution_ranked.csv"), index=False)
+
 
 print("Files saved successfully!")
