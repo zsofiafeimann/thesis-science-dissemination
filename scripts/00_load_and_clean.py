@@ -52,8 +52,6 @@ df_author.drop(columns=['last_known_institution'], inplace=True)
 # Check duplicated authors
 print(df_author[df_author.duplicated(subset='author', keep=False)])
 
-# Check shape after cleaning
-print(df_author.shape)
 
 
 # === 5. Inspect df_data_2019 structure ===    
@@ -66,7 +64,7 @@ print(df_data_2019.columns)
 missing_counts = df_data_2019.isnull().sum()
 print(missing_counts[missing_counts > 0].sort_values(ascending=False))
 
-# Essential columns we *require* to be present
+# Essential columns *required* to be present
 essential_cols = ['altmetric_id', 'doi', 'pubdate', 'code']
 non_essential_cols = [col for col in df_data_2019.columns if col not in essential_cols]
 
@@ -100,7 +98,6 @@ print(df_ranking.head())
 print(df_ranking.info())
 print(df_ranking.columns)
 
-
 # Remove commas and convert to numeric
 df_ranking['stats_number_students'] = (
     df_ranking['stats_number_students']
@@ -119,6 +116,57 @@ df_ranking['stats_pc_intl_students'] = (
     .astype(float)                        # Finally convert to float
 )
 
+# Split stats_female_male_ratio into numeric columns
+def split_gender_ratio(ratio):
+    try:
+        female, male = ratio.split(':')
+        total = int(female.strip()) + int(male.strip())
+        return int(female.strip()) / total * 100, int(male.strip()) / total * 100
+    except:
+        return np.nan, np.nan
+
+# Apply the function and create two new numeric columns
+df_ranking[['female_pct', 'male_pct']] = df_ranking['stats_female_male_ratio'].apply(
+    lambda x: pd.Series(split_gender_ratio(x))
+)
+
+print(df_ranking[['stats_female_male_ratio', 'female_pct', 'male_pct']].dropna().head())
+
+# Clean rank column to numeric format (rank_clean) 
+# Function to convert rank values to numeric
+def clean_rank(value):
+    if pd.isnull(value):
+        return np.nan
+    value = str(value).strip()
+    if value.startswith('='):
+        return int(value[1:])
+    if '–' in value or '-' in value:
+        parts = value.replace('–', '-').split('-')
+        try:
+            nums = list(map(int, parts))
+            return sum(nums) / len(nums)
+        except:
+            return np.nan
+    if value.endswith('+'):
+        try:
+            return float(value.replace('+', ''))
+        except:
+            return np.nan
+    if '>' in value:
+        try:
+            return float(value.replace('>', ''))
+        except:
+            return np.nan
+    try:
+        return float(value)
+    except:
+        return np.nan
+
+# Apply updated function
+df_ranking['rank_clean'] = df_ranking['rank'].apply(clean_rank)
+
+print(df_ranking[['rank', 'rank_clean']].head(10))
+print(df_ranking['rank_clean'].isnull().sum(), 'missing values in rank_clean')
 
 
 
@@ -131,7 +179,7 @@ print(df_institution.columns)
 
 # Filter institutional data to only include 2019 publications
 print(df_data_2019['pub_year'].unique())
-print(df_data_2019['pubdate'].str[:4].unique())
+print(df_data_2019['pubdate'].dt.year.unique())
 df_data_2019['all_citaitons'].describe()
 
 # Normalize DOI formats in both datasets
@@ -150,42 +198,50 @@ df_institution_2019 = df_institution[df_institution['doi'].isin(df_data_2019['do
 print(len(df_institution_2019))
 
 
-
 # Show a few non-null values if any
-print(df_institution['raw_affiliation_string'].dropna().count
+print(df_institution_2019['raw_affiliation_string'].dropna().count())
+
+# Drop the 'raw_affiliation_string' column because it contains only missing values
+df_institution_2019.drop(columns=['raw_affiliation_string'], inplace=True)
+
+# Check how many rows are exact duplicates and if they are drop them
+print("Exact duplicates:", df_institution_2019.duplicated().sum())
+duplicates = df_institution_2019[df_institution_2019.duplicated(keep=False)]
+
+df_institution_2019 = df_institution[df_institution['doi'].isin(df_data_2019['doi'])].copy()
+df_institution_2019.drop_duplicates(inplace=True)
 
 
+# Check missing values in key columns
+print(df_institution_2019[['author', 'institutions', 'display_name', 'country_code']].isnull().sum())
 
 
+missing_display = df_institution_2019[df_institution_2019['display_name'].isnull()]
+print(missing_display[['doi', 'author', 'institutions', 'country_code']].head(10))
 
 
+# Fill missing display_name and country_code for that specific institution
+df_institution_2019.loc[
+    df_institution_2019['institutions'] == 'https://openalex.org/I4210154534',
+    'display_name'
+] = 'Instituto de Investigacións Mariñas'
+
+df_institution_2019.loc[
+    df_institution_2019['institutions'] == 'https://openalex.org/I4210154534',
+    'country_code'
+] = 'ES'
 
 
+# === 6. Save cleaned dataframes to CSV ===
 
+# Save cleaned author data
+df_author.to_csv('cleaned_data/author_clean.csv', index=False)
 
+# Save cleaned institution data (2019 only)
+df_institution_2019.to_csv('cleaned_data/institution_2019_clean.csv', index=False)
 
+# Save cleaned data_2019
+df_data_2019.to_csv('cleaned_data/data_2019_clean.csv', index=False)
 
-
-
-
-
-
-
-
-
-
-
-# === 4. Filter institutional data to only include 2019 publications ===
-print(df_data_2019['pub_year'].unique())
-print(df_data_2019['pubdate'].str[:4].unique())
-df_data_2019['all_citaitons'].describe()
-
-# === 4.1 Normalize DOI formats in both datasets ===
-print(df_data_2019['doi'].dropna().sample(5))
-print(df_institution['doi'].dropna().sample(5))
-
-df_data_2019['doi'] = df_data_2019['doi'].str.strip().str.lower()
-df_institution['doi'] = df_institution['doi'].str.strip().str.lower()
-
-# Remove 'https://doi.org/' prefix from institution DOIs
-df_institution['doi'] = df_institution['doi'].str.replace('https://doi.org/', '', regex=False)
+# Save cleaned ranking data
+df_ranking.to_csv('cleaned_data/ranking_clean.csv', index=False)
