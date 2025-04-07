@@ -12,7 +12,7 @@ import numpy as np
 pd.set_option("display.max_columns", 50)    
 
 # === 1. Load raw data ===
-df_author = pd.read_csv('data/merged_author_data.csv', encoding='utf-8')
+df_author = pd.read_csv('data/merged_author_data.csv', encoding='utf-8', )
 df_data_2019 = pd.read_csv('data/data_2019.csv', encoding='utf-8')
 df_ranking = pd.read_csv('data/2019_rankings.csv', encoding='utf-8')
 df_institution = pd.read_csv('data/merged_institutions_data.csv', encoding='utf-8')
@@ -235,13 +235,13 @@ df_institution_2019.loc[
 # === 6. Save cleaned dataframes to CSV ===
 
 # Save cleaned author data
-df_author.to_csv('cleaned_data/author_clean.csv', index=False)
+df_author.to_csv('cleaned_data/author_clean.csv', index=False, encoding='utf-8', sep = '|')
 
 # Save cleaned institution data (2019 only)
-df_institution_2019.to_csv('cleaned_data/institution_2019_clean.csv', index=False)
+df_institution_2019.to_csv('cleaned_data/institution_2019_clean.csv', index=False, encoding='utf-8', sep = '|' )
 
 # Save cleaned data_2019
-df_data_2019.to_csv('cleaned_data/data_2019_clean.csv', index=False)
+df_data_2019.to_csv('cleaned_data/data_2019_clean.csv', index=False, encoding='utf-8', sep = '|' )
 
 # Save cleaned ranking data
-df_ranking.to_csv('cleaned_data/ranking_clean.csv', index=False)
+df_ranking.to_csv('cleaned_data/ranking_clean.csv', index=False, encoding='utf-8', sep = '|' )
