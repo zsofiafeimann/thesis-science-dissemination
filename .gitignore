@@ -1,6 +1,7 @@
 # Don't upload raw or cleaned data
 data/
 cleaned_data/
+manual_review
 
 # Don't upload Python cache
 __pycache__/

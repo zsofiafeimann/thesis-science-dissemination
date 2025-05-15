@@ -1,187 +1,308 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Apr  5 14:34:03 2025
+Created on Tue Apr 22 17:32:33 2025
 
 @author: Diak
 """
 
+# === 1. Import and Setup ===
 import pandas as pd
-pip install fuzzywuzzy
-from fuzzywuzzy import process, fuzz
+import re
 import os
+from unidecode import unidecode
 
-# Set display options
-pd.set_option("display.max_columns", 50)    
+# === 2. Display Settings ===
+pd.set_option("display.max_columns", 50)
 
-# === 1. Load clean data ===
-df_institution_2019 = pd.read_csv('cleaned_data/institution_2019_clean.csv', encoding='utf-8', sep = '|')
-df_ranking = pd.read_csv('cleaned_data/ranking_clean.csv', encoding='utf-8', sep = '|')
+# === 3. Load Cleaned CSVs ===
+df_institution_2019 = pd.read_csv('cleaned_data/institution_2019_clean.csv', encoding='utf-8', sep='|')
+df_ranking = pd.read_csv('cleaned_data/ranking_clean.csv', encoding='utf-8', sep='|')
 
+# Backup original names for reference
+df_institution_2019['display_name_original'] = df_institution_2019['display_name']
+df_ranking['name_original'] = df_ranking['name']
 
-# === 2. Normalize institution display names ===
-df_institution_2019['display_name'] = df_institution_2019['display_name'].str.strip().str.lower()
-df_ranking['name'] = df_ranking['name'].str.strip().str.lower()
+# === 4. Name Normalization Function ===
+def normalization(text):
+    """
+    Clean and normalize institution names for reliable comparison.
+    - Lowercases and removes accents
+    - Removes invisible and special characters
+    - Standardizes common education terms
+    - Removes stopwords
+    """
+    if not isinstance(text, str):
+        return text
 
-# === 3. Merge institution and ranking datasets on exact name matches ===
-df_institution_ranked_exact = df_institution_2019.merge(
-    df_ranking,
-    left_on='display_name',
-    right_on='name',
-    how='inner'  # only keep exact matches
-)
+    # Lowercase and remove accents
+    text = unidecode(text).lower()
 
-# Check how many exact name matches were found
-print("Number of records in df_institution_2019:", len(df_institution_2019))
-print("Number of records in df_ranking:", len(df_ranking))
-print("Number of exact matches:", len(df_institution_ranked_exact))
+    # Remove invisible characters
+    invisible_chars = [
+        '\u200b', '\u00a0', '\ufeff', '\u202f', '\u2060',
+        '\u180e', '\u200e', '\u200f'
+    ]
+    for ch in invisible_chars:
+        text = text.replace(ch, '')
 
-# Optionally: How many unique institutions matched exactly
-exact_unique_matches = df_institution_ranked_exact['display_name'].nunique()
-print("Unique institutions with exact match:", exact_unique_matches)
+    # Replace dashes with spaces
+    text = text.replace("-", " ")
 
+    # Remove unwanted punctuation (keep digits)
+    text = re.sub(r"[.,/\\&+:'\";=_@%!?()\[\]{}<>#^*~|‘’ʻʼʽˆ`ˋ´ˊ˘]", "", text)
 
-# === 4. Fuzzy match remaining institution names with ranking names ===
-# Identify ranking institution names not matched exactly
-ranking_names = set(df_ranking['name'].unique())
-exact_matched_names = set(df_institution_ranked_exact['display_name'].unique())
-not_matched_names = ranking_names - exact_matched_names
+    # Remove extra whitespace
+    text = re.sub(r"\s+", " ", text).strip()
 
-print("Number of ranking institutions:", len(ranking_names))
-print("Number of exact matches:", len(exact_matched_names))
-print("Number of unmatched ranking names (to fuzzy match):", len(not_matched_names))
+    # Standardize common education terms
+    replacements = {
+        # Institute variants
+        r"\binstitutet\b": "institute",
+        r"\binstitute\b": "institute",
+        r"\binstituto\b": "institute",
+        r"\binstituut\b": "institute",
+        r"\binstituttet\b": "institute",
+        r"\binstitutt\b": "institute",
+        r"\binstitut\b": "institute",
+        # University variants
+        r"\buniversite\b": "university",
+        r"\buniversitat\b": "university",
+        r"\buniversiteit\b": "university",
+        r"\buniverzita\b": "university",
+        r"\buniversidad\b": "university",
+        r"\buniversità\b": "university",
+        r"\buniversidade\b": "university",
+        r"\buniversität\b": "university",
+        r"\büniversite\b": "university",
+        r"\buniverzitet\b": "university",
+        r"\büniversitesi\b": "university",
+        r"\byliopisto\b": "university",
+        r"\begyetem\b": "university",
+        # College variants
+        r"\bcollege\b": "college",
+        r"\bcollegio\b": "college",
+        r"\bcolégio\b": "college",
+        r"\bkolleg\b": "college",
+        r"\bkolej\b": "college",
+        r"\bkollégium\b": "college",
+        r"\bkolegji\b": "college",
+        # School / academy
+        r"\bschool\b": "school",
+        r"\bschule\b": "school",
+        r"\bescola\b": "school",
+        r"\bescuela\b": "school",
+        r"\bskola\b": "school",
+        r"\bécole\b": "school",
+        r"\bakademie\b": "academy",
+        r"\bacademy\b": "academy"
+    }
+    for pattern, replacement in replacements.items():
+        text = re.sub(pattern, replacement, text)
 
+    # Remove content inside parentheses
+    text = re.sub(r'\s*\([^)]*\)', '', text)
 
-# Run fuzzy matching on unmatched ranking institution names
-from fuzzywuzzy import process, fuzz
+    # Remove common stopwords
+    stopwords = {
+        "of", "the", "and", "in", "for", "a", "an", "at", "on", "to",
+        "de", "del", "du", "di", "la", "le", "les", "des",
+        "von", "der", "den", "da", "do", "das", "dos",
+        "y", "e", "et", "und"
+    }
+    words = text.split()
+    words = [w for w in words if w not in stopwords]
+    text = " ".join(words)
 
-# Normalization function for institution names
-def normalize(text):
-    return (
-        text.lower()
-        .replace("’", "'")
-        .replace("–", "-")
-        .replace("“", '"')
-        .replace("”", '"')
-        .replace("&", "and")
-        .strip()
+    return text
+
+# === 5. Apply Normalization to Names ===
+df_institution_2019['display_name_clean'] = df_institution_2019['display_name'].apply(normalization)
+df_ranking['name_clean'] = df_ranking['name'].apply(normalization)
+
+# Check for duplicate normalized ranking names
+df_ranking['name_clean'].value_counts().loc[lambda x: x > 1]
+
+# === 6. Map Ranking Names to Rank Values ===
+ranking_name_mapping = {}
+for idx, row in df_ranking.iterrows():
+    norm_name = row['name_clean']
+    ranking_name_mapping[norm_name] = row['rank']
+
+# === 7. Exact Match Based on Normalized Names ===
+df_institution_2019['rank'] = df_institution_2019['display_name_clean'].map(ranking_name_mapping)
+
+# === 8. Summary of Exact Matches ===
+exact_matches = df_institution_2019['rank'].notna().sum()
+total_rows = len(df_institution_2019)
+print(f"Exact matches: {exact_matches} of {total_rows} ({(exact_matches / total_rows) * 100:.2f}%)")
+unique_exact = df_institution_2019[df_institution_2019['rank'].notna()]['display_name_clean'].nunique()
+
+# === 9. Fuzzy Matching Using RapidFuzz (first with a sample df) ===
+from rapidfuzz import process, fuzz
+from tqdm import tqdm
+tqdm.pandas()
+
+def fuzzy_match_wrapper_score(inst_name, threshold=90):
+    """
+    Fuzzy match institution name against ranking names.
+    Returns: (matched name, match score) if above threshold, else (None, None)
+    """
+    norm_name = normalization(inst_name)
+    result = process.extractOne(
+        norm_name,
+        list(ranking_name_mapping.keys()),
+        scorer=fuzz.WRatio,
+        score_cutoff=threshold
     )
+    if result is None:
+        return None, None
+    matched_name, score, _ = result
+    return matched_name, score
 
-# Create a mapping from normalized display names to original ones
-name_map = {
-    normalize(name): name
-    for name in df_institution_2019['display_name'].unique()
-}
+# Mask for institutions without an exact match
+mask = df_institution_2019['rank'].isna()
 
-# Initialize separate match categories
-high_confidence_matches = {}  # score >= 97
-manual_review_matches = {}    # score between 90 and 96
+### SAMPLE BEGIN (no need to run) ### 
 
-# Perform fuzzy matching for unmatched ranking names
-for name in not_matched_names:
-    normalized_name = normalize(name)
-    best_match_norm, score = process.extractOne(
-        normalized_name,
-        list(name_map.keys()),
-        scorer=fuzz.token_sort_ratio
-    )
-    best_match_original = name_map[best_match_norm]
+# Sample for fuzzy matching (up to 1000 or all unmatched)
+sample_size = min(1000, mask.sum())
+sample_df = df_institution_2019[mask].sample(sample_size, random_state=42).copy()
 
-    if score >= 97:
-        high_confidence_matches[name] = (best_match_original, score)
-    elif 90 <= score < 97:
-        manual_review_matches[name] = (best_match_original, score)
-        
-        
-        
-# High-confidence matches
-fuzzy_high_df = pd.DataFrame.from_dict(
-    high_confidence_matches, orient='index', columns=['matched_name', 'score']
-).reset_index().rename(columns={'index': 'ranking_name'})
+# Apply fuzzy matching to the sample
+results = sample_df['display_name_clean'].progress_apply(fuzzy_match_wrapper_score)
+sample_df['fuzzy_matched_name'] = results.apply(lambda x: x[0])
+sample_df['match_score'] = results.apply(lambda x: x[1])
 
-# Manual review matches
-fuzzy_manual_df = pd.DataFrame.from_dict(
-    manual_review_matches, orient='index', columns=['matched_name', 'score']
-).reset_index().rename(columns={'index': 'ranking_name'})
+# Summary of fuzzy matches in the sample
+matched_count = sample_df['match_score'].notna().sum()
+print(f"Fuzzy matches in sample: {matched_count} of {sample_size} ({(matched_count / sample_size) * 100:.2f}%)")
+
+# Show a few example fuzzy matches
+print(sample_df[sample_df['match_score'].notna()][[
+    'display_name_original', 'display_name_clean', 'fuzzy_matched_name', 'match_score'
+]].sample(min(10, matched_count)))
 
 
-fuzzy_manual_df.to_csv('cleaned_data/manual_review_fuzzy_matches.csv', index=False, encoding='utf-8', sep = '|' )
-fuzzy_high_df.to_csv('cleaned_data/high-confidence_fuzzy_matches.csv', index=False, encoding='utf-8', sep = '|' )
+### SAMPLE END ###
+
+# === 10. Full Fuzzy Matching (Threshold 90) ===
+results = df_institution_2019.loc[mask, 'display_name_clean'].progress_apply(fuzzy_match_wrapper_score)
+df_institution_2019.loc[mask, 'fuzzy_matched_name'] = results.apply(lambda x: x[0])
+df_institution_2019.loc[mask, 'fuzzy_rank'] = results.apply(lambda x: x[1])
+
+# Summary After Full Fuzzy Matching
+fuzzy_matches = df_institution_2019['fuzzy_rank'].notna().sum()
+print(f"Total fuzzy matches: {fuzzy_matches} of {len(df_institution_2019)} ({(fuzzy_matches / len(df_institution_2019)) * 100:.2f}%)")
+
+# Show a few example fuzzy matches from the full dataset
+sample_matches = df_institution_2019[df_institution_2019['fuzzy_rank'].notna()][[
+    'display_name_original', 'display_name_clean', 'fuzzy_matched_name', 'fuzzy_rank'
+]].sample(min(10, fuzzy_matches))
+print(sample_matches)
+
+# Get fuzzy matches that do not have an exact match
+fuzzy_only = df_institution_2019[
+    df_institution_2019['fuzzy_rank'].notna() &
+    df_institution_2019['rank'].isna()
+].copy()
+
+# Sort and deduplicate fuzzy matches
+fuzzy_only_sorted = fuzzy_only.sort_values(by='fuzzy_rank', ascending=False)
+fuzzy_unique = fuzzy_only_sorted.drop_duplicates(subset='display_name_clean').copy()
 
 
-# Load the cleaned, manually reviewed fuzzy match files
-high_df = pd.read_csv('cleaned_data/high_checked_fuzzy_matches.csv', encoding='utf-8', sep = '|')
-manual_df = pd.read_csv('cleaned_data/manual_checked_fuzzy_matches.csv', encoding='utf-8', sep = '|')
 
-# Concatenate both and keep only accepted rows
-fuzzy_all = pd.concat([manual_df, high_df], ignore_index=True)
-fuzzy_accepted = fuzzy_all[fuzzy_all['keep'] == 1]
+# === 11. Manual Review of Fuzzy Matches ONLY WHEN MANUAL REVIEW IS NEEDED ===
 
+# Export fuzzy candidates for manual checking 
+fuzzy_export_path = "manual_review\fuzzy_candidates_with_manual_check.csv"
+fuzzy_unique.to_csv(fuzzy_export_path, index=False)
 
+# Read manually reviewed fuzzy matches
+checked_fuzzy_df = pd.read_excel("manual_review/fuzzy_manual_checked.xlsx")
+accepted_fuzzy = checked_fuzzy_df[checked_fuzzy_df["keep"] == 1].copy()
+accepted_fuzzy = accepted_fuzzy[[
+    'display_name_clean', 'fuzzy_matched_name', 'fuzzy_rank'
+]]
 
-# === 5. Merge fuzzy match, and exact match institution names with ranking names ===
-# Merge accepted fuzzy matches with ranking data on the ranking_name
-df_ranking_fuzzy = df_ranking.merge(
-    fuzzy_accepted,
-    left_on='name',
-    right_on='ranking_name',
-    how='inner'
+# Initialize final_rank with exact match
+df_institution_2019['final_rank'] = df_institution_2019['rank']
+
+# Merge accepted fuzzy matches into main dataframe
+df_institution_2019 = df_institution_2019.merge(
+    accepted_fuzzy,
+    on='display_name_clean',
+    how='left',
+    suffixes=('', '_fuzzy')
 )
 
-# Merge fuzzy-ranked institutions with institution data
-df_institution_ranked_fuzzy = df_institution_2019.merge(
-    df_ranking_fuzzy,
-    left_on='display_name',
-    right_on='matched_name',
-    how='inner'
+# Update final_rank: use accepted fuzzy if no exact match
+df_institution_2019['final_rank'] = df_institution_2019['final_rank'].combine_first(
+    df_institution_2019['fuzzy_rank']
 )
 
-# Combine with exact matches (previously created)
-df_institution_ranked_all = pd.concat(
-    [df_institution_ranked_exact, df_institution_ranked_fuzzy],
-    ignore_index=True
+# === 12. Secondary Ranking Statistics ===
+total_rows = len(df_institution_2019)
+final_ranked_rows = df_institution_2019['final_rank'].notna().sum()
+print(f"Final ranked rows: {final_ranked_rows} of {total_rows} ({(final_ranked_rows / total_rows) * 100:.2f}%)")
+
+unique_final_ranked = df_institution_2019[df_institution_2019['final_rank'].notna()]['display_name_clean'].nunique()
+total_unique_institutions = df_institution_2019['display_name_clean'].nunique()
+print(f"Unique institutions with final_rank: {unique_final_ranked} of {total_unique_institutions} ({(unique_final_ranked / total_unique_institutions) * 100:.2f}%)")
+
+# === 13. Find Unmatched Ranked Institutions ONLY WHEN MANUAL REVIEW IS NEEDED ===
+matched_names = set(
+    df_institution_2019[df_institution_2019['final_rank'].notna()]['display_name_clean']
+) | set(
+    df_institution_2019[df_institution_2019['final_rank'].notna()]['fuzzy_matched_name'].dropna()
 )
 
-# Save the merged institution + ranking dataset (exact + fuzzy matches)
-df_institution_ranked_all.to_csv('cleaned_data/df_institution_ranked_all_raw.csv', index=False, encoding='utf-8', sep = '|')
+unmatched_ranked = df_ranking[~df_ranking['name_clean'].isin(matched_names)]
+print(f"Ranked institutions NOT matched: {len(unmatched_ranked)} of {len(df_ranking)}")
 
+# Export unmatched ranked institutions for manual review
+export_umatch = unmatched_ranked[['rank', 'name_original', 'name_clean']].copy()
+export_umatch.to_excel("manual_review/unmatched_ranked.xlsx", index=False)
 
-# === 6. Clean new institution ranked df ===
-# General info
-df_institution_ranked_all.info()
-print("Shape:", df_institution_ranked_all.shape)
-print(df_institution_ranked_all.sample(5))
-print("Columns:", df_institution_ranked_all.columns.tolist())
+# Export unique institution names for manual matching
+unique_institutions_df = df_institution_2019[[
+    'display_name_clean', 'display_name_original'
+]].drop_duplicates(subset='display_name_clean')
+unique_institution_export_path = "manual_review/unique_institution_names.xlsx"
+unique_institutions_df.to_excel(unique_institution_export_path, index=False)
 
+# === 14. Manual Pairing of Unmatched Institutions ===
+manual_df = pd.read_excel("manual_review/unmatched_ranked_paired.xlsx")
+manual_df = manual_df[manual_df['display_name_clean'].notna()]
 
-# Create a copy of the original merged dataset 
-df_institution_ranked_all_clean = df_institution_ranked_all.copy()
-
-# Drop unnecessary technical columns (fuzzy match + raw affiliation)
-fuzzy_cols = ['ranking_name', 'matched_name', 'score', 'keep', 'source', 'raw_affiliation_string']
-df_institution_ranked_all_clean.drop(
-    columns=[col for col in fuzzy_cols if col in df_institution_ranked_all_clean.columns],
-    inplace=True
+df_institution_2019 = df_institution_2019.merge(
+    manual_df[['display_name_clean', 'manual_rank']],
+    on='display_name_clean',
+    how='left'
 )
 
-print(df_institution_ranked_all_clean.columns)
+# Update final_rank if still missing
+df_institution_2019['final_rank'] = df_institution_2019['final_rank'].combine_first(
+    df_institution_2019['manual_rank']
+)
 
+# === 15. Final Reporting ===
+total_rows = len(df_institution_2019)
+ranked_rows = df_institution_2019['final_rank'].notna().sum()
+print(f"Final ranked rows: {ranked_rows} of {total_rows} ({(ranked_rows / total_rows) * 100:.2f}%)")
 
+unique_final_ranked = df_institution_2019[df_institution_2019['final_rank'].notna()]['display_name_clean'].nunique()
+total_unique_institutions = df_institution_2019['display_name_clean'].nunique()
+print(f"Unique institutions with final_rank: {unique_final_ranked} of {total_unique_institutions} ({(unique_final_ranked / total_unique_institutions) * 100:.2f}%)")
 
-df_institution_ranked_all_clean.to_csv('cleaned_data/institution_ranked_all_clean.csv', index=False, encoding='utf-8', sep = '|')
+# Add flag for ranked institutions
+df_institution_2019['rank_flag'] = df_institution_2019['final_rank'].notna().astype(int)
 
-
-
-
-
-# === 7. Check unmatch institution names ===
-matched_institutions = set(df_institution_ranked_all['name'].unique())
-all_ranked_institutions = set(df_ranking['name'].unique())
-
-unmatched_institutions = all_ranked_institutions - matched_institutions
-
-print(f"Unmatched ranked institutions: {len(unmatched_institutions)}")
-unmatched_df = df_ranking[df_ranking['name'].isin(unmatched_institutions)]
-unmatched_cleaned = unmatched_df[['rank', 'name', 'aliases', 'location']]
-unmatched_cleaned.to_csv('cleaned_data/unmatched_ranked_institutions.csv', index=False, encoding='utf-8', sep = '|')
-
-
+# Select and export final columns
+final_columns = [
+    'parent_id', 'doi', 'author', 'author_position', 'institutions', 'ror',
+    'display_name_original', 'display_name_clean', 'country_code', 'type',
+    'homepage_url', 'final_rank', 'rank_flag'
+]
+final_df = df_institution_2019[final_columns].copy()
+final_df.to_csv("cleaned_data/ranked_institution_2019.csv", index=False, sep="|")

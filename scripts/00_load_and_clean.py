@@ -93,7 +93,7 @@ print(df_data_2019['pubdate'].min(), '→', df_data_2019['pubdate'].max())
 
 
 
-# === 5. Inspect df_ranking structure === 
+# === 6. Inspect df_ranking structure === 
 print(df_ranking.head())
 print(df_ranking.info())
 print(df_ranking.columns)
@@ -171,7 +171,7 @@ print(df_ranking['rank_clean'].isnull().sum(), 'missing values in rank_clean')
 
 
 
-# === 5. Inspect df_institution structure === 
+# === 7. Inspect df_institution structure === 
 # Check the first few rows and general info
 print(df_institution.head())
 print(df_institution.info())
@@ -232,7 +232,7 @@ df_institution_2019.loc[
 ] = 'ES'
 
 
-# === 6. Save cleaned dataframes to CSV ===
+# === 8. Save cleaned dataframes to CSV ===
 
 # Save cleaned author data
 df_author.to_csv('cleaned_data/author_clean.csv', index=False, encoding='utf-8', sep = '|')
